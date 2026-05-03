@@ -104,62 +104,61 @@ EDA-ში ნაჩვენები გრაფიკის საფუძ�
 
 Numeric ცვლადების Imputation-თვის გამოვიყენებ მედიანას, რადგან უკეთ აღწერს ზოგად ტრენდს (outlier-ების მიმართ მდგრადია).
 
+## Feature Engineering
+
+თითოეულ მოდელში გამოვიყენე შემდეგი feature engineering მიდგომები.
+V1-V339 ცვლადები Vesta Corporation-ის მიერ შენიღბულია და მათი
+ინტერპრეტაცია შეუძლებელია, ამიტომ ისინი გამოყენებულ იქნა პირდაპირ.
+
+### საერთო features ყველა მოდელში
+- **hour, day, month** - TransactionDT-დან დროის ამოღება
+- **log_TransactionAmt** - თანხის log transformation skewness-ის გამო
+- **cents** - ათობითი ნაწილი, fraudsters მრგვალ თანხებს იყენებს
+- **uid, uid2** - card1+card2+card3 კომბინაცია, ბარათის identifier
+- **email_match** - გამგზავნი და მიმღები email ემთხვევა თუ არა
+- **P_email_count, R_email_count** - email დომენის სიხშირე dataset-ში
+- **card1_count, uid_count** - ბარათის გამოჩენის სიხშირე
+- **OS, browser** - id_30, id_31 სტრიქონების გაყოფა
+
+### XGBoost-ისთვის დამატებითი features
+- **dollars** - თანხის მთელი ნაწილი
+- **card1_mean_amt, card1_std_amt** - ბარათის საშუალო და std თანხა
+- **uid_mean_amt, uid_std_amt** - uid-ის საშუალო და std თანხა
+- **amt_deviation** - ტრანზაქცია რამდენად განსხვავდება ბარათის საშუალოდან
+- **amt_deviation_uid** - იგივე uid დონეზე
+
+### კატეგორიული ცვლადების Encoding
+- **Linear მოდელები** - Label Encoding binary სვეტებზე, Target Encoding
+  მაღალი კარდინალობის სვეტებზე (email domains, DeviceInfo)
+- **Tree-based მოდელები** - Label Encoding ყველა categorical სვეტზე,
+  scaling არ სჭირდება
+
+### Missing Values
+- **80%+ missing** - ამოვიღეთ (74 სვეტი)
+- **დარჩენილი NaN** - Median imputation, fit on train only
+
+
+## Feature Selection
+
+სხვადასხვა მოდელისთვის სხვადასხვა feature selection მიდგომა გამოვიყენე:
+
+| მოდელი | მეთოდი 1 | მეთოდი 2 | საბოლოო features |
+|---|---|---|---|
+| Logistic Regression | კორელაცია <0.005 | SelectKBest k=100 | 100 |
+| Decision Tree | კორელაცია <0.005 | Tree importance >0 | 25 |
+| Random Forest | კორელაცია <0.005 | RF importance mean | 52 |
+| AdaBoost | კორელაცია <0.005 | SelectKBest k=80 | 80 |
+| XGBoost | კორელაცია <0.005 | XGB importance >0 | 168 |
+
+XGBoost-ში დამატებით Permutation Importance გამოვიყენე - ყველაზე
+reliable მიდგომა. feature-ის მნიშვნელობა random-ად ვარყევთ და AUC-ის
+კლებას ვზომავთ. 168 feature შერჩეული იქნა საბოლოოდ.
+
 ## Training
 
 ### Logistic Regression
 Logistic Regression გამოვიყენე, როგორც მარტივი baseline მოდელი კლასიფიკაციისთვის.
-
-**Feature Engineering:**
-შევქმენით 14 ახალი feature:
-
-- **hour, day, month** - `TransactionDT`-დან გამოვიტანეთ დროის ცვლადები.
-  EDA-ში ვნახეთ, რომ დილის 4-10 საათზე fraud rate 3-4-ჯერ მაღალია -
-  შექმნილი ცვლადები ამ პატერნს მოდელს გადასცემს.
-
-- **log_TransactionAmt** - თანხის განაწილება ძალიან skewed არის, რამდენიმე
-  ძალიან დიდი ტრანზაქცია დაამახინჯებს სკალას. log transform
-  განაწილებას უფრო ნორმალურს გახდის, რაც წრფივი მოდელისთვის განსაკუთრებით მნიშვნელოვანია.
-
-- **cents** - ტრანზაქციის თანხის ათობითი ნაწილი. fraudsters ხშირად
-  იყენებენ მრგვალ თანხებს ($100.00, $200.00), ხოლო ლეგიტიმური
-  ტრანზაქციები random cents-ს შეიცავს ($68.50, $29.99).
-
-- **uid, uid2** - card1+card2 და card1+card2+card3 კომბინაცია.
-  ცალკე card1 და card2 შეიძლება არ კორელირებდეს fraud-თან,
-  მაგრამ მათი კომბინაცია შეესაბამებოდეს ერთ კონკრეტულ ბარათს -
-  ეს საშუალებას გვაძლევს ამ ბარათის ქცევა გავიგოთ.
-
-- **email_match** - ემთხვევა თუ არა გამგზავნის (P_emaildomain) და
-  მიმღების (R_emaildomain) email. EDA-ში ვნახეთ, რომ
-  R_emaildomain-ს აქვს ~80-90% fraud rate გარკვეულ დომენებზე -
-  დომენების შეუსაბამობა ერთ-ერთი საეჭვო სიგნალია.
-
-- **P_email_count, R_email_count** - რამდენჯერ გვხვდება ეს email
-  დომენი მთელ dataset-ში. იშვიათი დომენები უფრო საეჭვოა -
-  frequency encoding საშუალებას გვაძლევს მოდელმა ეს დაინახოს.
-
-- **card1_count, uid_count** - რამდენჯერ გამოჩნდა ეს ბარათი
-  dataset-ში. ბარათი, რომელიც ხშირად გამოჩნდა ნაკლებად საეჭვოა, 
-  ხოლო ბარათი რომელიც მხოლოდ 1-2-ჯერ გამოჩნდა - მეტად.
-
-- **OS, browser** - id_30 და id_31 სტრიქონებიდან გამოვიტანეთ
-  OS სახელი და browser სახელი. მთლიანი სტრიქონს ("Chrome 69.0")
-  მაღალი კარდინალობა ჰქონდა, დაყოფის შემდეგ კი
-  გაცილებით ნაკლები უნიკალური მნიშვნელობა გვაქვს.
-
-სულ 371 სვეტი feature engineering-ის შემდეგ.
-
-**Encoding & Imputation:**
-- Label Encoding ყველა categorical სვეტისთვის (train+test ერთად)
-- Median imputation დარჩენილი NaN-ებისთვის (fit on train only)
-- StandardScaler - Logistic Regression scale-sensitive მოდელია
-
-**Feature Selection:**
-
-გამოვიყენე 2 მიდგომა:
-- კორელაციის ფილტრი - ამან 73 სვეტი ამოიღო (<0.005 კორელაცია target-თან)
-- SelectKBest (ANOVA F-test) - საუკეთესო 100 feature დავტოვე
-
+  
 **Hyperparameter Optimization:**
 C პარამეტრი გავტესტე სამ მნიშვნელობაზე:
 
@@ -191,7 +190,6 @@ tree-based მოდელები გაცილებით უკეთე�
 ### Decision Tree
 
 Decision Tree გამოვიყენე როგორც საშუალო კომპლექსურობის მოდელი, რომლითაც კარგად ვაჩვენებ Overfit/Underfit მოდელებს.
-ძირითადი ნაწილები Cleaning, Feature Engineering და Selection-ის პირველი ნაწილი იგივე გამოვიყენე.
 
 **Feature Selection:**
 
@@ -234,15 +232,10 @@ MLflow Model Registry-ში სახელით `DecisionTree_Fraud`.
 
 Random Forest არის Decision Tree Ensemble - ბევრი tree ერთად უკეთეს შედეგს გვაძლევს ვიდრე ერთი.
 
-**Feature Selection:**
-ორი მიდგომა გავტესტეთ RF-ის feature importance-ით:
-- v1: threshold=mean - 52 feature დარჩა
-- v2: importance > 0 - 249 feature დარჩა
-
-52 feature ავირჩიეთ - გონივრული რაოდენობა RF-ისთვის.
 
 **Hyperparameter Optimization:**
-n_estimators და max_depth კომბინაციები გავტესტეთ:
+
+n_estimators და max_depth კომბინაციები გავტესტე:
 
 | n_estimators | max_depth | Train AUC | Test AUC | CV AUC | F1 |
 |---|---|---|---|---|---|
@@ -285,12 +278,9 @@ depth=5 არ აქვს საკმარისად კარგი პ�
 AdaBoost არის boosting-ის ერთ-ერთი მეთოდი - თითოეული weak learner ფოკუსირდება
 წინას შეცდომებზე. Decision Tree-გან განსხვავებით ensemble მიმდევრობით კეთდება.
 
-**Feature Selection:**
-
-კორელაციის ფილტრი + SelectKBest (f_classif) გამოვიყენეთ - დავტოვეთ 80 feature.
-
 **Hyperparameter Optimization:**
-n_estimators და learning_rate კომბინაციები გავტესტეთ:
+
+n_estimators და learning_rate კომბინაციები გავტესტე:
 
 | n_estimators | learning_rate | Train AUC | Test AUC | CV AUC | F1 |
 |---|---|---|---|---|---|
@@ -335,3 +325,160 @@ learners-ს იყენებს და ამ რთულ fraud dataset-ზ�
 **საუკეთესო მოდელი** - n=200, lr=0.5, Test AUC 0.7325.
 შენახულია MLflow Model Registry-ში სახელით `AdaBoost_Fraud`
 
+### XGBoost
+
+XGBoost არის boosting-ის ერთ-ერთი ყველაზე გავრცელებული და მძლავრი მეთოდი, რომელსაც ჩაშენებული აქვს regularization და ძირითადად ეს გამოიყენება.
+ამიტომ მეც ვიცოდი, რომ სავარაუდოდ საუკეთესო შედეგს ეს მოდელი მომცემდა და ყველაზე მეტი დრო მის ტრენინგს დავუთმე.
+
+**Cleaning**
+
+სხვა მოდელებისგან განსხვავებით XGBoost-ში ორი სხვადასხვა cleaning სტრატეგია
+გავტესტე:
+
+- **v1: threshold=0.8** - 74 სვეტი ამოვიღეთ, დარჩა 358 სვეტი
+- **v2: threshold=0.7** - 208 სვეტი ამოვიღეთ, დარჩა 224 სვეტი
+
+v2 baseline-ზე უკეთეს შედეგს იძლევა (0.9319 vs 0.9255), რაც ნიშნავს რომ 70-80%
+missing მქონე სვეტები ძირითადად noise იყო და არა სიგნალი. თუმცა Optuna-ს ჰიპერპარამეტრების ოპტიმიზაციის შემდეგ
+v1 საუკეთესო აღმოჩნდა (0.9626 vs 0.9621) ამიტომ v1 გამოვიყენე საბოლოოდ.
+
+
+**Training**
+
+**Baseline** - default params:
+- Train AUC: 0.9748 | Test AUC: 0.9255 | F1: 0.4333
+- კარგი baseline მაგრამ train/test gap ნიშნავს, რომ რეგულარიზაცია სჭირდება
+
+**Underfit** - max_depth=2, n_estimators=50, learning_rate=0.01:
+- Train AUC: 0.8246 | Test AUC: 0.8258 | F1: 0.2146
+- ძალიან მარტივი მოდელი - ვერ სწავლობს საკმარის პატერნებს
+
+**Overfit** - max_depth=15, n_estimators=1000, reg_alpha=0, reg_lambda=0:
+- Train AUC: 1.0000 | Test AUC: 0.9590 | F1: 0.7234
+- Train AUC სრულყოფილია - მოდელი სატრენინგო მონაცემებს იზეპირებს.
+  რეგულარიზაციის გარეშე (reg_alpha=0, reg_lambda=0) XGBoost სწრაფად მიდის overfit-ში.
+  თუმცა Test AUC 0.959 აჩვენებს რომ Optuna-თი მაინც შეგვიძლია კარგი შედეგის მიღება.
+
+---
+
+**Hyperparameter Optimization - Optuna:**
+
+სხვა მოდელებისგან განსხვავებით XGBoost-ში Optuna გამოვიყენე -
+Bayesian optimization framework რომელიც ჭკვიანურად ეძებს საუკეთესო
+ჰიპერპარამეტრებს. Manual grid search-ისგან განსხვავებით Optuna წინა
+trial-ების შედეგებზე დაყრდნობით ირჩევს შემდეგ კომბინაციას.
+
+გავტესტე შემდეგი hyperparameters:
+- max_depth:        3-10
+- learning_rate:    0.01-0.3
+- n_estimators:     100-800
+- subsample:        0.6-1.0
+- colsample_bytree: 0.6-1.0
+- min_child_weight: 1-10
+- reg_alpha:        0-5
+- reg_lambda:       0-5
+
+**v1 Optuna (50 trials, threshold=0.8):**
+- Best CV AUC: 0.9646
+- Best params: max_depth=10, lr=0.062, n_estimators=800, min_child_weight=6,
+  reg_alpha=3.57, reg_lambda=0.004
+
+**v2 Optuna (30 trials, threshold=0.7):**
+- Best CV AUC: 0.9621
+- Best params: max_depth=10, lr=0.114, n_estimators=557, min_child_weight=3
+
+v1 საუკეთესო აღმოჩნდა - reg_alpha=3.57 ძლიერი L1 რეგულარიზაცია უზრუნველყოფს
+კარგ განზოგადებას. 3-fold cross validation გამოვიყენე სანდო შეფასებისთვის.
+
+---
+
+**Cleaning threshold შედარება baseline-ზე:**
+
+| version | threshold | features | baseline AUC | optuna CV AUC | optuna test AUC |
+|---|---|---|---|---|---|
+| v1 | 0.8 | 358 | 0.9255 | 0.9646 | 0.9626 |
+| v2 | 0.7 | 224 | 0.9319 | 0.9621 | 0.9621 |
+
+საინტერესო დაკვირვება - v2 baseline-ზე უკეთესია მაგრამ Optuna-ს შემდეგ v1
+უკეთეს CV AUC-ს იძლევა. ეს ნიშნავს რომ 70-80% missing სვეტები noise-ს შეიცავს
+მაგრამ Optuna ამ noise-ს უმკლავდება.
+
+---
+
+**საბოლოო Pipeline:**
+
+Pipeline-ი შეიცავს ყველა preprocessing ნაბიჯს raw data-დან prediction-მდე:
+
+Pipeline raw test data-ზე პირდაპირ მუშაობს - preprocessing ხელით არ სჭირდება.
+
+**Pipeline შედეგები:**
+- Test AUC: 0.9724
+- F1: 0.8035
+- Precision: 0.8680
+- Recall: 0.7479
+
+Pipeline-ი უკეთეს შედეგს იძლევა ვიდრე ცალკე trained მოდელი (0.9626 AUC)
+რადგან სრულ train data-ზე ვატრენინგებთ split-ის გარეშე.
+
+Pipeline შენახულია MLflow Model Registry-ში სახელით `XGBoost_Fraud_Pipeline`,
+version 1. inference notebook-ში პირდაპირ იქიდან ვტვირთავ და raw test data-ზე predict-ს ვუშვებ.
+
+**Kaggle Submission Score: 0.930841 (Private), 0.890065 (Public)**
+![Submission Score](/images/submission.png)
+
+## MLflow Tracking
+
+### MLflow ექსპერიმენტების ბმული
+[DagsHub MLflow](https://dagshub.com/lkhiz23/IEEE-CIS-Fraud-Detection.mlflow)
+
+### სტრუქტურა
+თითოეული მოდელისთვის ცალკე ექსპერიმენტი შევქმენი:
+- `LogisticRegression_Training` - Cleaning, FE, Encoding, Feature Selection, CV runs
+- `DecisionTree_Training` - იგივე სტრუქტურა
+- `RandomForest_Training` - იგივე სტრუქტურა
+- `AdaBoost_Training` - იგივე სტრუქტურა
+- `XGBoost_Training` - იგივე სტრუქტურა + Optuna run
+
+### ჩაწერილი მეტრიკები
+ყველა run-ზე ჩავწერე: `test_auc`, `test_f1`, `test_precision`, `test_recall`,
+`train_auc`, `cv_auc_mean`, `cv_auc_std`
+
+### Model Registry
+| მოდელი | Registry სახელი | AUC |
+|---|---|---|
+| Logistic Regression | LogisticRegression_Fraud | 0.7903 |
+| Decision Tree | DecisionTree_Fraud | 0.8319 |
+| Random Forest | RandomForest_Fraud | 0.8769 |
+| AdaBoost | AdaBoost_Fraud | 0.7325 |
+| XGBoost | XGBoost_Fraud_Pipeline | 0.9724 |
+
+## გამოცდილება
+
+მარტივი მოდელებიდან რთულებამდე გადასვლისას AUC 0.79-დან 0.97-მდე გაიზარდა.
+ყველაზე დიდი გაუმჯობესება Random Forest-დან XGBoost-ზე გადასვლისას მოხდა, რადგან boosting ამ ტიპის პრობლემას უკეთესად ერგება.
+
+Feature Engineering-მა განსაკუთრებით დიდი როლი ითამაშა - aggregation features
+(card1_mean_amt, amt_deviation) და frequency encoding (card1_count, uid_count)
+ყველაზე ინფორმაციული features აღმოჩნდა.
+
+---
+
+### სამუშაო გარემო
+
+პროექტი Kaggle-ზე დავწერე, რადგან მონაცემები ძალიან დიდია
+(590k+ სტრიქონი, 434 სვეტი) და ლოკალურად გარემოში მეხსიერების პრობლემები მექნებოდა.
+
+თუმცა Kaggle-ზე მუშაობას თავისი შეზღუდვები ჰქონდა:
+- **Kernel restarts** - გრძელი გამოთვლებისას (Optuna 50 trial ≈ 3 საათი)
+  kernel ხშირად რესტარტებოდა და ყველაფერი მეკარგებოდა.
+
+- **Notebook isolation** - Kaggle-ზე notebook-ები ერთმანეთს ვერ ხედავს,
+  ამიტომ preprocessing კოდი (cleaning, feature engineering, encoding)
+  ყველა notebook-ში დუბლირებულია. ლოკალურ გარემოში ან GitHub Codespaces-ში
+  ეს კოდი ერთ `utils.py` ფაილში იქნებოდა და ყველა notebook-ი მას import-ს
+  გაუკეთებდა - კოდი გაცილებით სუფთა და maintainable იქნებოდა
+- **Session limits** - Kaggle-ს აქვს session timeout, რაც გრძელი
+  ტრენინგისას (XGBoost Optuna) პრობლემებს მიქმნიდა.
+
+ამ შეზღუდვების მიუხედავად Kaggle-მა უზრუნველყო საჭირო რესურსები,
+რომელიც ადგილობრივ მანქანაზე შეუძლებელი იქნებოდა.
