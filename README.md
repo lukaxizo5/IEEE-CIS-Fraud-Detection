@@ -25,9 +25,10 @@
 ## ჩემი მიდგომა
 პრობლემის გადასაჭრელად გამოვიყენე შემდეგი workflow:
 1. **EDA** - მონაცემების შესწავლა და პრობლემების იდენტიფიცირება
-2. **Data Cleaning** - missing values დამუშავება და ცვლადების encoding
+2. **Data Cleaning** - missing values დამუშავება
 3. **Feature Engineering** - ახალი ინფორმაციული ცვლადების შექმნა
-4. **Feature Selection** - უსარგებლო ცვლადების ამოღება და სწორი ცვლადების შერჩევა მოდელის დასატრენინგებლად
+4. **Encoding and Imputation** - ცვლადების encoding და imputing
+5. **Feature Selection** - უსარგებლო ცვლადების ამოღება და სწორი ცვლადების შერჩევა მოდელის დასატრენინგებლად
 5. **Model Training** - baseline მოდელებიდან advanced მოდელებამდე + HPO (Hyperparameter Optimization)
 
 ## რეპოზიტორიის სტრუქტურა
@@ -36,6 +37,7 @@ IEEE-CIS-Fraud-Detection/
 ├── images/                                      # გრაფიკები README-თვის
 ├── model_experiment_{model_architecture}.ipynb  # თითოეული მოდელის არქიტექტურისთვის მთავარი სამუშაო ფაილი მოდელის დასატრენინგებლად
 ├── model_inference.ipynb                        # საბოლოო პროგნოზი და submission
+├── eda.ipynb                                    # Exploratory Data Analysis
 └── README.md                                    # პროექტის დოკუმენტაცია
 ```
 
@@ -277,3 +279,59 @@ depth=5 არ აქვს საკმარისად კარგი პ�
   გაცილებით უკეთესი
 
 შენახულია MLflow Model Registry-ში სახელით `RandomForest_Fraud`.
+
+### AdaBoost
+
+AdaBoost არის boosting-ის ერთ-ერთი მეთოდი - თითოეული weak learner ფოკუსირდება
+წინას შეცდომებზე. Decision Tree-გან განსხვავებით ensemble მიმდევრობით კეთდება.
+
+**Feature Selection:**
+
+კორელაციის ფილტრი + SelectKBest (f_classif) გამოვიყენეთ - დავტოვეთ 80 feature.
+
+**Hyperparameter Optimization:**
+n_estimators და learning_rate კომბინაციები გავტესტეთ:
+
+| n_estimators | learning_rate | Train AUC | Test AUC | CV AUC | F1 |
+|---|---|---|---|---|---|
+| 10 (underfit) | 0.1 | 0.6405 | 0.6418 | - | - |
+| 500 (overfit) | 1.0 | 0.7410 | 0.7474 | - | - |
+| 50 | 0.01 | 0.6447 | 0.6455 | 0.6447 | 0.00 |
+| 50 | 0.1 | 0.7197 | 0.7262 | 0.7222 | 0.13 |
+| 50 | 0.5 | 0.7175 | 0.7230 | 0.7156 | 0.27 |
+| 100 | 0.01 | 0.6446 | 0.6454 | 0.6446 | 0.00 |
+| 100 | 0.1 | 0.7237 | 0.7299 | 0.7238 | 0.14 |
+| 100 | 0.5 | 0.7201 | 0.7262 | 0.7221 | 0.27 |
+| 200 | 0.01 | 0.7131 | 0.7174 | 0.7134 | 0.00 |
+| 200 | 0.1 | 0.7241 | 0.7303 | 0.7254 | 0.16 |
+| 200 | 0.5 | 0.7267 | 0.7325 | 0.7245 | 0.27 |
+
+**შედეგების ანალიზი:**
+
+**Underfit** - n=10, lr=0.1: Train 0.6405 | Test 0.6418 - ორივე
+დაბალია და თითქმის იდენტური. 10 weak learner საკმარისი არ არის დატაში არსებული პატერნების სასწავლად.
+
+**Overfit** - n=500, lr=1.0: Train 0.7410 | Test 0.7474 -
+აქ overfit ვცადე, თუმცა test train-ზე მაღალი გამოვიდა.
+ამის ერთ-ერთი მიზეზი ისაა, რომ ensemble მეთოდები უფრო ძნელად გადიან overfit-ში.
+
+**learning_rate=0.01** - ყველა შემთხვევაში **F1=0** - მოდელი ყველა
+ტრანზაქციას not fraud-ად პროგნოზირებს. learning_rate იმდენად
+დაბალია რომ მოდელი საერთოდ ვერ სწავლობს fraud კლასს. AUC მაინც 0.64-0.71-ია
+რადგან AUC probability scores-ს იყენებს და არა hard predictions-ს.
+
+**learning_rate გავლენა** - lr=0.5 consistently უკეთესია lr=0.1-ზე.
+მაღალი learning rate უფრო სწრაფად სწავლობს fraud პატერნს.
+
+**n_estimators გავლენა** - 50-დან 200-მდე გაზრდა მინიმალურ
+გაუმჯობესებას იძლევა - diminishing returns.
+
+**საერთო დასკვნა** - AdaBoost ამ dataset-ზე სუსტია. მაქსიმუმ
+0.73 AUC - Logistic Regression-ზე (0.79) და Random Forest-ზე
+(0.877) გაცილებით ნაკლები. მიზეზი: AdaBoost shallow weak
+learners-ს იყენებს და ამ რთულ fraud dataset-ზე ვერ სწავლობს
+საკმარის პატერნებს.
+
+**საუკეთესო მოდელი** - n=200, lr=0.5, Test AUC 0.7325.
+შენახულია MLflow Model Registry-ში სახელით `AdaBoost_Fraud`
+
