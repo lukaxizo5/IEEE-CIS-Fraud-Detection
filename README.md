@@ -226,3 +226,54 @@ Test AUC კლებულობს - მოდელი სატრენი�
 
 **საუკეთესო მოდელი:** max_depth=10, Test AUC 0.8319 - შენახულია
 MLflow Model Registry-ში სახელით `DecisionTree_Fraud`.
+
+
+### Random Forest
+
+Random Forest არის Decision Tree Ensemble - ბევრი tree ერთად უკეთეს შედეგს გვაძლევს ვიდრე ერთი.
+
+**Feature Selection:**
+ორი მიდგომა გავტესტეთ RF-ის feature importance-ით:
+- v1: threshold=mean - 52 feature დარჩა
+- v2: importance > 0 - 249 feature დარჩა
+
+52 feature ავირჩიეთ - გონივრული რაოდენობა RF-ისთვის.
+
+**Hyperparameter Optimization:**
+n_estimators და max_depth კომბინაციები გავტესტეთ:
+
+| n_estimators | max_depth | Train AUC | Test AUC | CV AUC | F1 |
+|---|---|---|---|---|---|
+| 10 (underfit) | 3 | 0.8122 | 0.8120 | - | - |
+| 500 (overfit) | None | 0.9750 | 0.8512 | - | - |
+| 25 | 5 | 0.8357 | 0.8345 | 0.8332 | 0.23 |
+| 25 | 10 | 0.8659 | 0.8599 | 0.8596 | 0.25 |
+| 25 | 15 | 0.8967 | 0.8747 | 0.8704 | 0.31 |
+| 50 | 15 | 0.8975 | 0.8757 | 0.8714 | 0.30 |
+| 100 | 15 | 0.8986 | 0.8765 | 0.8728 | 0.31 |
+| 150 | 15 | 0.8991 | 0.8769 | 0.8731 | 0.31 |
+| 250 | 15 | 0.8990 | 0.8767 | 0.8732 | 0.31 |
+
+**შედეგების ანალიზი:**
+
+**Underfit** - n=10, depth=3: Train და Test AUC ორივე დაბალია. მოდელი ძალიან მარტივია - 10 shallow tree
+საკმარისი სიგნალი არ არის.
+
+**Overfit** - n=500, depth=None: Train AUC 0.975 vs Test AUC
+0.851 - ძალიან დიდი სხვაობაა. Decision Tree-გან განსხვავებით Random Forest უფრო რთულად
+მიდის overfit-ში, მაგრამ თუ მივუშვით (როგორც ამ შემთხვევაში), მაინც წავა.
+
+**საინტერესო დაკვირვება** - n_estimators 25-დან 250-მდე
+პრაქტიკულად არ ცვლის შედეგს. ეს ნიშნავს რომ 25 tree
+საკმარისია ამ dataset-ზე და დამატებითი tree-ები redundant-ია.
+
+**max_depth გავლენა** - depth=15 consistently საუკეთესოა.
+depth=5 არ აქვს საკმარისად კარგი პერფორმანსი, depth=15 კარგი ბალანსია overfit-ის გარეშე.
+
+**საუკეთესო მოდელი** - n=150, depth=15:
+- Test AUC: 0.8769
+- CV AUC: 0.8731
+- Logistic Regression-ზე (0.79) და Decision Tree-ზე (0.83)
+  გაცილებით უკეთესი
+
+შენახულია MLflow Model Registry-ში სახელით `RandomForest_Fraud`.
